@@ -3,6 +3,23 @@ const STORAGE_KEY = "athleteos:v1";
 const DEFAULT_PLAN = [
   {
     day: "Monday",
+    type: "Run",
+    title: "Easy run and mobility",
+    distance: 8,
+    pace: "5:15-5:50/km",
+    exercises: [
+      { name: "Easy run", target: "8 km at 5:15-5:50/km, controlled" },
+      { name: "Hip flexor stretch", target: "" },
+      { name: "Hamstring stretch", target: "" },
+      { name: "Glute stretch", target: "" },
+      { name: "Deep squat hold", target: "" },
+      { name: "Cobra stretch", target: "" },
+      { name: "Child's pose", target: "" },
+      { name: "Slow nasal breathing", target: "5 min" },
+    ],
+  },
+  {
+    day: "Tuesday",
     type: "Strength",
     title: "Upper body strength and abs",
     exercises: [
@@ -22,24 +39,20 @@ const DEFAULT_PLAN = [
     ],
   },
   {
-    day: "Tuesday",
+    day: "Wednesday",
     type: "Run",
-    title: "Easy run and mobility",
+    title: "Tempo run",
     distance: 8,
-    pace: "5:15-5:50/km",
+    pace: "4:25-4:40/km tempo",
     exercises: [
-      { name: "Easy run", target: "8 km at 5:15-5:50/km, controlled" },
-      { name: "Hip flexor stretch", target: "" },
-      { name: "Hamstring stretch", target: "" },
-      { name: "Glute stretch", target: "" },
-      { name: "Deep squat hold", target: "" },
-      { name: "Cobra stretch", target: "" },
-      { name: "Child's pose", target: "" },
-      { name: "Slow nasal breathing", target: "5 min" },
+      { name: "Easy warm-up", target: "2 km" },
+      { name: "Tempo", target: "4 km at 4:25-4:40/km" },
+      { name: "Easy cool-down", target: "2 km" },
+      { name: "Mobility: hips, quads, calves, lower back", target: "10 min" },
     ],
   },
   {
-    day: "Wednesday",
+    day: "Thursday",
     type: "Strength",
     title: "Lower body strength and core",
     exercises: [
@@ -57,20 +70,20 @@ const DEFAULT_PLAN = [
     ],
   },
   {
-    day: "Thursday",
+    day: "Friday",
     type: "Run",
-    title: "Tempo run",
-    distance: 8,
-    pace: "4:25-4:40/km tempo",
+    title: "Long run",
+    distance: 14,
+    pace: "5:20-6:00/km",
     exercises: [
-      { name: "Easy warm-up", target: "2 km" },
-      { name: "Tempo", target: "4 km at 4:25-4:40/km" },
-      { name: "Easy cool-down", target: "2 km" },
-      { name: "Mobility: hips, quads, calves, lower back", target: "10 min" },
+      { name: "Long run", target: "14 km at 5:20-6:00/km, steady" },
+      { name: "Walk cooldown", target: "10 min" },
+      { name: "Stretch", target: "10 min" },
+      { name: "Refuel", target: "eat within 1-2 hours" },
     ],
   },
   {
-    day: "Friday",
+    day: "Saturday",
     type: "Strength",
     title: "Full-body strength and abs",
     exercises: [
@@ -86,19 +99,6 @@ const DEFAULT_PLAN = [
       { name: "Leg raises", target: "3 sets of 12" },
       { name: "Mountain climbers", target: "3 sets of 40 sec" },
       { name: "Plank to push-up", target: "3 sets of 10" },
-    ],
-  },
-  {
-    day: "Saturday",
-    type: "Run",
-    title: "Long run",
-    distance: 14,
-    pace: "5:20-6:00/km",
-    exercises: [
-      { name: "Long run", target: "14 km at 5:20-6:00/km, steady" },
-      { name: "Walk cooldown", target: "10 min" },
-      { name: "Stretch", target: "10 min" },
-      { name: "Refuel", target: "eat within 1-2 hours" },
     ],
   },
   {
@@ -139,6 +139,7 @@ const defaultState = {
 
 let state = loadState();
 let deferredInstallPrompt = null;
+let logDate = todayISO();
 
 const screen = document.querySelector("#screen");
 const installButton = document.querySelector("#installButton");
@@ -174,6 +175,15 @@ function weekStart(dateInput = new Date()) {
 
 function inCurrentWeek(item) {
   return item.date >= weekStart() && item.date <= todayISO();
+}
+
+function weekDates() {
+  const start = new Date(weekStart());
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(date.getDate() + index);
+    return date.toISOString().slice(0, 10);
+  });
 }
 
 function sum(items, key) {
@@ -386,6 +396,7 @@ const LOG_MODES = [
 function renderLog() {
   const mode = state.logMode;
   screen.innerHTML = `
+    ${weekOverviewHTML()}
     <section class="panel panel-pad">
       <h2>Log progress</h2>
       <div class="tabs">
@@ -397,11 +408,37 @@ function renderLog() {
   `;
 }
 
+function weekOverviewHTML() {
+  return `
+    <section class="panel panel-pad">
+      <h2>This week</h2>
+      <div class="workout-list">
+        ${weekDates()
+          .map((date, index) => {
+            const plan = state.plan[index];
+            const isToday = date === todayISO();
+            const logged = state.workouts.some((item) => item.date === date);
+            return `
+              <button type="button" class="row week-row ${isToday ? "is-today" : ""}" data-action="select-log-day" data-date="${date}">
+                <div>
+                  <strong>${plan.day}${isToday ? " · Today" : ""}</strong>
+                  <span class="muted">${plan.type} — ${plan.title}</span>
+                </div>
+                <span class="${statusClass(logged ? "" : "amber")}">${logged ? "Logged" : "Open"}</span>
+              </button>
+            `;
+          })
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
 function dailyForm() {
   return `
     <form class="panel panel-pad form" data-form="daily">
       <div class="grid-2">
-        ${field("Date", "date", "date", todayISO())}
+        ${field("Date", "date", "date", logDate)}
         ${field("Sleep", "sleep", "number", "", "Hours", "0.1")}
       </div>
       ${scaleField("Soreness", "soreness")}
@@ -416,10 +453,18 @@ function dailyForm() {
 }
 
 function workoutForm() {
-  const dateValue = todayISO();
+  const dateValue = logDate;
   return `
     <form class="panel panel-pad form" data-form="workout">
-      ${field("Date", "date", "date", dateValue)}
+      <div class="grid-2">
+        ${field("Date", "date", "date", dateValue)}
+        <div class="field">
+          <label for="logDaySelect">Day</label>
+          <select id="logDaySelect">
+            ${state.plan.map((day) => `<option ${day.day === planForDate(dateValue).day ? "selected" : ""}>${day.day}</option>`).join("")}
+          </select>
+        </div>
+      </div>
       <div id="planPreview">${planPreviewHTML(dateValue)}</div>
       <div class="grid-2">
         ${scaleField("Fatigue", "fatigue")}
@@ -734,6 +779,18 @@ function updatePlanField(el) {
   if (field === "type") renderLog();
 }
 
+function syncWorkoutForm(newDate) {
+  logDate = newDate;
+  const form = document.querySelector('[data-form="workout"]');
+  if (!form) return;
+  const dateInput = form.querySelector('input[name="date"]');
+  const daySelect = form.querySelector("#logDaySelect");
+  const preview = form.querySelector("#planPreview");
+  if (dateInput) dateInput.value = newDate;
+  if (daySelect) daySelect.value = planForDate(newDate).day;
+  if (preview) preview.innerHTML = planPreviewHTML(newDate);
+}
+
 document.addEventListener("click", (event) => {
   const nav = event.target.closest("[data-tab]");
   if (nav) setActiveTab(nav.dataset.tab);
@@ -757,6 +814,11 @@ document.addEventListener("click", (event) => {
   const action = event.target.closest("[data-action]")?.dataset.action;
   if (action === "quick-log") goToLog("workout");
   if (action === "edit-plan") goToLog("plan");
+
+  if (action === "select-log-day") {
+    logDate = event.target.closest("[data-action]").dataset.date;
+    goToLog("workout");
+  }
 
   if (action === "add-exercise") {
     const dayIndex = Number(event.target.closest("[data-action]").dataset.dayIndex);
@@ -800,8 +862,13 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("input", (event) => {
   if (event.target.name === "date" && event.target.closest('[data-form="workout"]')) {
-    const container = document.querySelector("#planPreview");
-    if (container) container.innerHTML = planPreviewHTML(event.target.value);
+    if (event.target.value) syncWorkoutForm(event.target.value);
+    return;
+  }
+
+  if (event.target.id === "logDaySelect") {
+    const dayIndex = state.plan.findIndex((day) => day.day === event.target.value);
+    if (dayIndex !== -1) syncWorkoutForm(weekDates()[dayIndex]);
     return;
   }
 
