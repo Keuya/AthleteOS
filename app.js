@@ -166,11 +166,164 @@ function loadState() {
   }
   loaded.profile = { ...defaultProfile, ...loaded.profile };
   if (!loaded.profile.startDate) loaded.profile.startDate = todayISO();
+  if (!loaded.meta || typeof loaded.meta !== "object") loaded.meta = { updatedAt: 0 };
   return loaded;
 }
 
-function saveState() {
+function saveState(push = true) {
+  state.meta = { updatedAt: Date.now() };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (push) schedulePush();
+}
+
+function newId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// --- Cross-device sync via a private GitHub Gist ---
+// The gist token is stored separately from app data so exports never include it.
+const SYNC_KEY = "athleteos:sync";
+const GIST_FILE = "athleteos-data.json";
+const GIST_DESC = "AthleteOS sync data";
+
+let syncConfig = loadSyncConfig();
+let syncStatus = syncConfig.token && syncConfig.gistId ? "idle" : "off";
+let pushTimer = null;
+
+function loadSyncConfig() {
+  try {
+    return { token: "", gistId: "", lastSync: 0, ...JSON.parse(localStorage.getItem(SYNC_KEY)) };
+  } catch {
+    return { token: "", gistId: "", lastSync: 0 };
+  }
+}
+
+function saveSyncConfig() {
+  localStorage.setItem(SYNC_KEY, JSON.stringify(syncConfig));
+}
+
+async function gistApi(path, method = "GET", body) {
+  const response = await fetch(`https://api.github.com${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${syncConfig.token}`,
+      Accept: "application/vnd.github+json",
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) throw new Error(`GitHub API ${response.status}`);
+  return response.json();
+}
+
+function schedulePush() {
+  if (!syncConfig.token || !syncConfig.gistId) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushToGist, 2000);
+}
+
+async function pushToGist() {
+  if (!syncConfig.token || !syncConfig.gistId) return;
+  syncStatus = "syncing";
+  try {
+    await gistApi(`/gists/${syncConfig.gistId}`, "PATCH", {
+      files: { [GIST_FILE]: { content: JSON.stringify(state) } },
+    });
+    syncConfig.lastSync = Date.now();
+    saveSyncConfig();
+    syncStatus = "idle";
+  } catch {
+    syncStatus = "error";
+  }
+  if (state.activeTab === "profile") render();
+}
+
+async function pullFromGist() {
+  const gist = await gistApi(`/gists/${syncConfig.gistId}`);
+  const content = gist.files?.[GIST_FILE]?.content;
+  if (!content) return false;
+  state = mergeStates(state, JSON.parse(content));
+  saveState(false);
+  return true;
+}
+
+function mergeByDate(local = [], remote = []) {
+  const map = new Map();
+  [...remote, ...local].forEach((item) => {
+    if (item?.date) map.set(item.date, item);
+  });
+  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function mergeById(local = [], remote = []) {
+  const map = new Map();
+  [...remote, ...local].forEach((item) => {
+    if (item) map.set(item.id || JSON.stringify(item), item);
+  });
+  return [...map.values()].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+}
+
+function mergeStates(local, remote) {
+  if (!remote || typeof remote !== "object") return local;
+  const remoteNewer = (remote.meta?.updatedAt || 0) > (local.meta?.updatedAt || 0);
+  const base = remoteNewer ? remote : local;
+  return {
+    ...local,
+    targetKm: Number(base.targetKm) || local.targetKm,
+    plan: Array.isArray(base.plan) && base.plan.length === 7 ? base.plan : local.plan,
+    profile: { ...defaultProfile, ...(remoteNewer ? remote.profile : local.profile) },
+    daily: mergeByDate(local.daily, remote.daily),
+    workouts: mergeById(local.workouts, remote.workouts),
+    body: mergeById(local.body, remote.body),
+    meta: { updatedAt: Math.max(local.meta?.updatedAt || 0, remote.meta?.updatedAt || 0) },
+  };
+}
+
+async function connectSync(token) {
+  syncConfig.token = token;
+  syncStatus = "syncing";
+  render();
+  try {
+    const gists = await gistApi("/gists?per_page=100");
+    const existing = gists.find((gist) => gist.files && gist.files[GIST_FILE]);
+    if (existing) {
+      syncConfig.gistId = existing.id;
+      saveSyncConfig();
+      await pullFromGist();
+      await pushToGist();
+    } else {
+      const created = await gistApi("/gists", "POST", {
+        description: GIST_DESC,
+        public: false,
+        files: { [GIST_FILE]: { content: JSON.stringify(state) } },
+      });
+      syncConfig.gistId = created.id;
+      syncConfig.lastSync = Date.now();
+      saveSyncConfig();
+    }
+    syncStatus = "idle";
+    toast("Sync connected — this device now shares one dataset");
+  } catch {
+    syncConfig = { token: "", gistId: "", lastSync: 0 };
+    saveSyncConfig();
+    syncStatus = "off";
+    toast("Could not connect — check the token and its Gists permission");
+  }
+  render();
+}
+
+async function syncNow() {
+  syncStatus = "syncing";
+  render();
+  try {
+    await pullFromGist();
+    await pushToGist();
+    toast("Synced");
+  } catch {
+    syncStatus = "error";
+    toast("Sync failed — check your connection");
+  }
+  render();
 }
 
 function toLocalISO(date) {
@@ -881,7 +1034,38 @@ function renderProfile() {
       </div>
       <p class="muted" style="margin-top:10px">Protein target is ${profile.proteinPerKg} g per kg of bodyweight${protein ? "" : " — add your weight above to see it"}. Weekly km follows an 8-week wave: build for six weeks, deload on week 7, push again on week 8.</p>
     </section>
+    ${syncSection()}
   `;
+}
+
+function syncSection() {
+  if (!syncConfig.token || !syncConfig.gistId) {
+    return `
+    <section class="panel panel-pad">
+      <h2>Sync across devices</h2>
+      <p class="muted">Right now your logs live only in this device's browser storage — the laptop and phone each keep their own copy. Connect sync and the app keeps one shared dataset in a secret Gist on your GitHub account, pulled on every open and pushed after every save.</p>
+      <p class="muted"><strong>One-time setup:</strong> on GitHub go to Settings &rarr; Developer settings &rarr; Personal access tokens &rarr; Fine-grained tokens &rarr; Generate new token. Under Account permissions set <strong>Gists: Read and write</strong> (nothing else), create it, and paste it below. Then paste the same token on your other device.</p>
+      <div class="field">
+        <label for="syncToken">GitHub token</label>
+        <input id="syncToken" type="password" placeholder="github_pat_..." autocomplete="off" />
+      </div>
+      <button class="primary-button" type="button" data-action="sync-connect" style="margin-top:10px">Connect sync</button>
+    </section>`;
+  }
+  const last = syncConfig.lastSync ? new Date(syncConfig.lastSync).toLocaleString() : "never";
+  const badge = syncStatus === "syncing" ? `<span class="status amber">Syncing&hellip;</span>` : syncStatus === "error" ? `<span class="status red">Error</span>` : `<span class="status">On</span>`;
+  return `
+    <section class="panel panel-pad">
+      <h2>Sync across devices</h2>
+      <div class="readiness-line">
+        <div><strong>Connected to your GitHub Gist</strong><br /><span class="muted">Last sync: ${last}</span></div>
+        ${badge}
+      </div>
+      <div class="grid-2" style="margin-top:12px">
+        <button class="secondary-button" type="button" data-action="sync-now">Sync now</button>
+        <button class="secondary-button" type="button" data-action="sync-disconnect">Disconnect</button>
+      </div>
+    </section>`;
 }
 
 function weeklyDistanceSeries() {
@@ -1047,6 +1231,22 @@ document.addEventListener("click", (event) => {
     toast(`Weekly target set to ${state.targetKm} km`);
     render();
   }
+
+  if (action === "sync-connect") {
+    const token = document.querySelector("#syncToken")?.value.trim();
+    if (!token) toast("Paste a GitHub token first");
+    else connectSync(token);
+  }
+
+  if (action === "sync-now") syncNow();
+
+  if (action === "sync-disconnect") {
+    syncConfig = { token: "", gistId: "", lastSync: 0 };
+    saveSyncConfig();
+    syncStatus = "off";
+    toast("Sync disconnected — your data stays on this device");
+    render();
+  }
 });
 
 document.addEventListener("input", (event) => {
@@ -1073,7 +1273,7 @@ document.addEventListener("submit", (event) => {
     const data = toObject(form);
     state.daily = state.daily.filter((item) => item.date !== data.date);
     state.daily.push(data);
-    if (data.weight || data.waist) state.body.push({ date: data.date, weight: data.weight, waist: data.waist, abs: "" });
+    if (data.weight || data.waist) state.body.push({ id: newId(), date: data.date, weight: data.weight, waist: data.waist, abs: "" });
     toast("Check-in saved");
   }
 
@@ -1083,12 +1283,13 @@ document.addEventListener("submit", (event) => {
     const data = Object.fromEntries(formData.entries());
     delete data.done;
     data.done = done;
+    data.id = newId();
     state.workouts.push(data);
     toast("Workout saved");
   }
 
   if (form.dataset.form === "body") {
-    state.body.push(toObject(form));
+    state.body.push({ ...toObject(form), id: newId() });
     toast("Body log saved");
   }
 
@@ -1130,3 +1331,14 @@ document.querySelectorAll(".nav-button").forEach((button) => {
 });
 
 render();
+
+if (syncConfig.token && syncConfig.gistId) {
+  pullFromGist()
+    .then((changed) => {
+      if (changed) render();
+      return pushToGist();
+    })
+    .catch(() => {
+      syncStatus = "error";
+    });
+}

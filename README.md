@@ -31,3 +31,13 @@ iPhone Safari:
 4. Open AthleteOS from your home screen.
 
 Your logs are stored in your phone browser storage. Use **Progress > Export data** to save a backup.
+
+## Sync Between Devices
+
+By default each device keeps its own data. To share one dataset between laptop and phone:
+
+1. On GitHub: Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token. Under **Account permissions**, set **Gists: Read and write** (nothing else).
+2. In the app: open the ⚙ profile screen → **Sync across devices** → paste the token → **Connect sync**.
+3. Repeat step 2 on the other device with the same token.
+
+The app stores your data in a secret Gist on your GitHub account, pulls it every time it opens, and pushes after every save. Logs from both devices are merged, so nothing is overwritten. The token never leaves your device and is not included in data exports.
