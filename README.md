@@ -5,10 +5,10 @@ AthleteOS is an installable personal fitness PWA for logging readiness, workouts
 ## Features
 
 - Daily readiness check-ins: sleep, soreness, heart rate, weight, waist
-- Workout logs: run distance, time, push-up max, fatigue, notes
+- Workout logging built around the day's specific activities — check off exercises instead of typing them in
+- Editable weekly plan: change the type, title, and exact activities scheduled for each day
 - Weekly 30 km running dashboard with adaptive next-week target
 - Strength, stamina, body, and mobility progress views
-- Progress photo support stored locally on the device
 - Offline-ready service worker and installable app manifest
 
 ## Install On Your Phone

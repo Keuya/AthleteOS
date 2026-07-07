@@ -310,7 +310,7 @@ h3 {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding: 4px;
   border: 1px solid var(--line);
@@ -424,12 +424,89 @@ h3 {
   vector-effect: non-scaling-stroke;
 }
 
-.photo-preview {
-  width: 100%;
-  max-height: 240px;
-  object-fit: cover;
+.plan-preview {
+  padding: 12px;
   border-radius: var(--radius);
+  background: var(--panel-2);
+}
+
+.checklist {
+  display: grid;
+  gap: 8px;
+}
+
+.check-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
   border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.check-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--green);
+}
+
+.scale-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.scale-btn {
+  min-width: 36px;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.scale-btn.is-active {
+  border-color: var(--green);
+  background: var(--green);
+  color: #062111;
+}
+
+.plan-day {
+  display: grid;
+  gap: 10px;
+}
+
+.exercise-list {
+  display: grid;
+  gap: 8px;
+}
+
+.exercise-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.exercise-row input {
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+}
+
+.exercise-row .icon-button {
+  width: 42px;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--red);
 }
 
 .empty-state {
