@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">AthleteOS app icon</title>
+  <desc id="desc">Dark square app icon with green athletic pulse mark.</desc>
+  <rect width="512" height="512" rx="104" fill="#0f1720"/>
+  <path d="M96 300h64l42-122 82 210 52-168h80" fill="none" stroke="#24d36b" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="372" cy="142" r="34" fill="#3388ff"/>
+  <path d="M138 364h236" stroke="#ffffff" stroke-opacity=".92" stroke-width="32" stroke-linecap="round"/>
+</svg>
