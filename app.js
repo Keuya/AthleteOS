@@ -165,7 +165,7 @@ function loadState() {
     loaded.plan = clonePlan(DEFAULT_PLAN);
   }
   loaded.profile = { ...defaultProfile, ...loaded.profile };
-  if (!loaded.profile.startDate) loaded.profile.startDate = new Date().toISOString().slice(0, 10);
+  if (!loaded.profile.startDate) loaded.profile.startDate = todayISO();
   return loaded;
 }
 
@@ -173,16 +173,27 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function toLocalISO(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDate(text) {
+  const [year, month, day] = String(text).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return toLocalISO(new Date());
 }
 
 function weekStart(dateInput = new Date()) {
-  const date = new Date(dateInput);
+  const date = dateInput instanceof Date ? new Date(dateInput.getTime()) : parseLocalDate(dateInput);
   const day = date.getDay() || 7;
   date.setDate(date.getDate() - day + 1);
-  date.setHours(0, 0, 0, 0);
-  return date.toISOString().slice(0, 10);
+  return toLocalISO(date);
 }
 
 function inCurrentWeek(item) {
@@ -190,11 +201,11 @@ function inCurrentWeek(item) {
 }
 
 function weekDates() {
-  const start = new Date(weekStart());
+  const start = parseLocalDate(weekStart());
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(start);
     date.setDate(date.getDate() + index);
-    return date.toISOString().slice(0, 10);
+    return toLocalISO(date);
   });
 }
 
@@ -228,7 +239,7 @@ function streakDays() {
   let streak = 0;
   const cursor = new Date();
   if (!dates.has(todayISO())) cursor.setDate(cursor.getDate() - 1);
-  while (dates.has(cursor.toISOString().slice(0, 10))) {
+  while (dates.has(toLocalISO(cursor))) {
     streak += 1;
     cursor.setDate(cursor.getDate() - 1);
   }
@@ -236,7 +247,7 @@ function streakDays() {
 }
 
 function trainingWeek() {
-  const start = new Date(state.profile.startDate || todayISO());
+  const start = parseLocalDate(state.profile.startDate || todayISO());
   const diffDays = Math.floor((Date.now() - start.getTime()) / 86400000);
   return Math.max(1, Math.floor(diffDays / 7) + 1);
 }
@@ -289,7 +300,7 @@ function average(items, key) {
 }
 
 function dayIndexFor(dateInput) {
-  const date = dateInput ? new Date(dateInput) : new Date();
+  const date = dateInput ? parseLocalDate(dateInput) : new Date();
   const day = date.getDay();
   return day === 0 ? 6 : day - 1;
 }
