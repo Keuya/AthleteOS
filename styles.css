@@ -62,6 +62,11 @@ button {
   color: rgba(255, 255, 255, 0.62);
 }
 
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .label {
   margin: 0 0 2px;
   color: var(--muted);

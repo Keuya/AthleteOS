@@ -1,4 +1,4 @@
-const CACHE_NAME = "athleteos-cache-v5";
+const CACHE_NAME = "athleteos-cache-v6";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./assets/icon.svg"];
 
 self.addEventListener("install", (event) => {

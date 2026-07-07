@@ -127,11 +127,21 @@ function clonePlan(plan) {
   return plan.map((day) => ({ ...day, exercises: day.exercises.map((exercise) => ({ ...exercise })) }));
 }
 
+const defaultProfile = {
+  name: "",
+  weightKg: "",
+  tenKmPace: "4:18",
+  pushupBaseline: 30,
+  proteinPerKg: 1.8,
+  startDate: null,
+};
+
 const defaultState = {
   targetKm: 30,
   activeTab: "home",
   logMode: "daily",
   plan: null,
+  profile: null,
   daily: [],
   workouts: [],
   body: [],
@@ -154,6 +164,8 @@ function loadState() {
   if (!Array.isArray(loaded.plan) || loaded.plan.length !== 7) {
     loaded.plan = clonePlan(DEFAULT_PLAN);
   }
+  loaded.profile = { ...defaultProfile, ...loaded.profile };
+  if (!loaded.profile.startDate) loaded.profile.startDate = new Date().toISOString().slice(0, 10);
   return loaded;
 }
 
@@ -184,6 +196,86 @@ function weekDates() {
     date.setDate(date.getDate() + index);
     return date.toISOString().slice(0, 10);
   });
+}
+
+function paceToSeconds(text) {
+  const match = /^(\d+):(\d{1,2})$/.exec(String(text).trim());
+  if (!match) return 0;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function secondsToPace(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function paceZones() {
+  const base = paceToSeconds(state.profile.tenKmPace) || 258;
+  return {
+    easy: [base + 57, base + 92],
+    tempo: [base + 7, base + 22],
+    long: [base + 62, base + 102],
+  };
+}
+
+function zoneLabel(zone) {
+  return `${secondsToPace(zone[0])}-${secondsToPace(zone[1])}/km`;
+}
+
+function streakDays() {
+  const dates = new Set([...state.daily, ...state.workouts].map((item) => item.date));
+  let streak = 0;
+  const cursor = new Date();
+  if (!dates.has(todayISO())) cursor.setDate(cursor.getDate() - 1);
+  while (dates.has(cursor.toISOString().slice(0, 10))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+function trainingWeek() {
+  const start = new Date(state.profile.startDate || todayISO());
+  const diffDays = Math.floor((Date.now() - start.getTime()) / 86400000);
+  return Math.max(1, Math.floor(diffDays / 7) + 1);
+}
+
+const PROGRESSION_WAVE = [30, 30, 32, 34, 35, 38, 28, 36];
+
+function waveTargetKm() {
+  return PROGRESSION_WAVE[(trainingWeek() - 1) % PROGRESSION_WAVE.length];
+}
+
+function greeting() {
+  const hour = new Date().getHours();
+  const part = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const name = String(state.profile.name || "").trim();
+  return name ? `${part}, ${name}` : part;
+}
+
+function allRuns() {
+  return state.workouts.filter((item) => item.category === "Run");
+}
+
+function longestRun() {
+  return Math.max(0, ...allRuns().map((run) => Number(run.distance) || 0));
+}
+
+function totalKmAllTime() {
+  return sum(allRuns(), "distance");
+}
+
+function bestPaceRun() {
+  const runs = allRuns().filter((run) => Number(run.distance) >= 3 && Number(run.time) > 0);
+  if (!runs.length) return null;
+  return runs.reduce((best, run) => (Number(run.time) / Number(run.distance) < Number(best.time) / Number(best.distance) ? run : best));
+}
+
+function proteinTarget() {
+  const weight = Number(latestBody()?.weight) || Number(state.profile.weightKg) || 0;
+  if (!weight) return 0;
+  return Math.round(weight * (Number(state.profile.proteinPerKg) || 1.8));
 }
 
 function sum(items, key) {
@@ -342,7 +434,7 @@ function renderHome() {
     <section class="panel hero-panel">
       <div class="readiness-line">
         <div>
-          <p class="label">Today</p>
+          <p class="label">${greeting()} · Week ${trainingWeek()}${streakDays() > 1 ? ` · &#128293; ${streakDays()}-day streak` : ""}</p>
           <h2 class="hero-title">${ready.title}</h2>
           <p class="muted">${ready.detail}</p>
         </div>
@@ -447,6 +539,11 @@ function dailyForm() {
         ${field("Weight", "weight", "number", "", "kg", "0.1")}
       </div>
       ${field("Waist", "waist", "number", "", "cm", "0.1")}
+      <label class="check-row">
+        <input type="checkbox" name="nutrition" value="yes" />
+        <span>Nutrition on point today${proteinTarget() ? ` (~${proteinTarget()} g protein, no junk)` : " (enough protein, no junk)"}</span>
+        <span></span>
+      </label>
       <button class="primary-button" type="submit">Save check-in</button>
     </form>
   `;
@@ -665,6 +762,11 @@ function renderBody() {
         ${metric("Waist", latest?.waist || "-", latest?.waist ? "cm" : "")}
         ${metric("Push-ups", bestPushups() || "-")}
       </div>
+      <div class="grid-2" style="margin-top:10px">
+        ${metric("Protein target", proteinTarget() || "-", proteinTarget() ? " g/day" : "")}
+        ${metric("Nutrition days", `${state.daily.filter(inCurrentWeek).filter((item) => item.nutrition).length}/7`)}
+      </div>
+      <p class="muted" style="margin-top:10px">Abs come from core work, low enough body fat, and consistent nutrition — the waist trend and nutrition days tell you if the last two are moving.</p>
     </section>
     <form class="panel panel-pad form" data-form="body">
       <div class="grid-2">
@@ -684,12 +786,27 @@ function bestPushups() {
 
 function renderProgress() {
   const advice = adaptiveAdvice();
+  const best = bestPaceRun();
+  const baseline = Number(state.profile.pushupBaseline) || 0;
+  const bestReps = bestPushups();
   screen.innerHTML = `
     <section class="panel panel-pad">
       <h2>Progress trends</h2>
       <div class="grid-2">
         ${metric("Next target", advice.nextTarget, " km")}
-        ${metric("Best push-ups", bestPushups() || "-")}
+        ${metric("Training week", trainingWeek())}
+      </div>
+      <p class="muted" style="margin-top:10px">Week ${trainingWeek()} of the 8-week wave — programme suggests ~${waveTargetKm()} km this week.</p>
+    </section>
+    <section class="panel panel-pad">
+      <h2>Personal bests</h2>
+      <div class="grid-2">
+        ${metric("Push-ups", bestReps > 0 ? bestReps : baseline || "-", baseline && bestReps > baseline ? ` (was ${baseline})` : "")}
+        ${metric("Longest run", longestRun() ? longestRun() : "-", longestRun() ? " km" : "")}
+      </div>
+      <div class="grid-2" style="margin-top:10px">
+        ${metric("Best pace", best ? pace(best) : "-")}
+        ${metric("Total logged", totalKmAllTime() ? totalKmAllTime().toFixed(0) : "-", totalKmAllTime() ? " km" : "")}
       </div>
     </section>
     <section class="panel panel-pad">
@@ -706,6 +823,52 @@ function renderProgress() {
         <button class="secondary-button" type="button" data-action="export">Export data</button>
         <button class="secondary-button" type="button" data-action="apply-target">Use next target</button>
       </div>
+    </section>
+  `;
+}
+
+function renderProfile() {
+  const profile = state.profile;
+  const zones = paceZones();
+  const protein = proteinTarget();
+  screen.innerHTML = `
+    <section class="panel panel-pad">
+      <h2>Your profile</h2>
+      <p class="muted">The app uses this to personalise pace zones, protein target, and progression. Everything stays on your device.</p>
+    </section>
+    <form class="panel panel-pad form" data-form="profile">
+      <div class="grid-2">
+        ${field("Name", "name", "text", profile.name, "Your name")}
+        ${field("Weight", "weightKg", "number", profile.weightKg, "kg", "0.1")}
+      </div>
+      <div class="grid-2">
+        ${field("10 km pace", "tenKmPace", "text", profile.tenKmPace, "e.g. 4:18")}
+        ${field("Push-up baseline", "pushupBaseline", "number", profile.pushupBaseline, "reps", "1")}
+      </div>
+      <div class="grid-2">
+        ${field("Weekly km target", "targetKm", "number", state.targetKm, "km", "1")}
+        ${field("Protein", "proteinPerKg", "number", profile.proteinPerKg, "g per kg", "0.1")}
+      </div>
+      ${field("Programme start date", "startDate", "date", profile.startDate)}
+      <button class="primary-button" type="submit">Save profile</button>
+    </form>
+    <section class="panel panel-pad">
+      <h2>Your pace zones</h2>
+      <p class="muted">Computed from your 10 km pace of ${profile.tenKmPace}/km.</p>
+      <div class="workout-list">
+        <div class="row"><div><strong>Easy runs</strong><span class="muted">Conversational, builds the aerobic base</span></div><span class="status">${zoneLabel(zones.easy)}</span></div>
+        <div class="row"><div><strong>Tempo</strong><span class="muted">Comfortably hard, the engine builder</span></div><span class="status amber">${zoneLabel(zones.tempo)}</span></div>
+        <div class="row"><div><strong>Long run</strong><span class="muted">Steady, not heroic</span></div><span class="status">${zoneLabel(zones.long)}</span></div>
+      </div>
+      <button class="secondary-button" type="button" data-action="apply-zones" style="margin-top:12px;width:100%">Apply these paces to my run plan</button>
+    </section>
+    <section class="panel panel-pad">
+      <h2>Daily targets</h2>
+      <div class="grid-2">
+        ${metric("Protein", protein ? protein : "-", protein ? " g/day" : "")}
+        ${metric("This week", waveTargetKm(), " km")}
+      </div>
+      <p class="muted" style="margin-top:10px">Protein target is ${profile.proteinPerKg} g per kg of bodyweight${protein ? "" : " — add your weight above to see it"}. Weekly km follows an 8-week wave: build for six weeks, deload on week 7, push again on week 8.</p>
     </section>
   `;
 }
@@ -749,6 +912,7 @@ function render() {
   if (state.activeTab === "run") renderRun();
   if (state.activeTab === "body") renderBody();
   if (state.activeTab === "progress") renderProgress();
+  if (state.activeTab === "profile") renderProfile();
 }
 
 function toObject(form) {
@@ -843,6 +1007,20 @@ document.addEventListener("click", (event) => {
     renderLog();
   }
 
+  if (action === "apply-zones") {
+    const zones = paceZones();
+    state.plan.forEach((day) => {
+      if (day.type !== "Run") return;
+      const title = day.title.toLowerCase();
+      if (title.includes("tempo")) day.pace = `${zoneLabel(zones.tempo)} tempo`;
+      else if (title.includes("long")) day.pace = zoneLabel(zones.long);
+      else day.pace = zoneLabel(zones.easy);
+    });
+    saveState();
+    toast("Run paces updated from your 10 km pace");
+    renderProfile();
+  }
+
   if (action === "export") {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -901,6 +1079,15 @@ document.addEventListener("submit", (event) => {
   if (form.dataset.form === "body") {
     state.body.push(toObject(form));
     toast("Body log saved");
+  }
+
+  if (form.dataset.form === "profile") {
+    const data = toObject(form);
+    const targetKm = Number(data.targetKm);
+    delete data.targetKm;
+    if (targetKm > 0) state.targetKm = targetKm;
+    state.profile = { ...state.profile, ...data };
+    toast("Profile saved");
   }
 
   saveState();

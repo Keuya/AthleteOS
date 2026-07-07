@@ -20,9 +20,14 @@
           <p class="label">Adaptive fitness dashboard</p>
           <h1>Athlete<span>OS</span></h1>
         </div>
-        <button id="installButton" class="icon-button install-hidden" type="button" aria-label="Install app">
-          <span aria-hidden="true">+</span>
-        </button>
+        <div class="topbar-actions">
+          <button id="profileButton" class="icon-button" type="button" data-tab="profile" aria-label="Profile and settings">
+            <span aria-hidden="true">&#9881;</span>
+          </button>
+          <button id="installButton" class="icon-button install-hidden" type="button" aria-label="Install app">
+            <span aria-hidden="true">+</span>
+          </button>
+        </div>
       </header>
 
       <main id="screen" class="screen" aria-live="polite"></main>
