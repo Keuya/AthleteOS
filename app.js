@@ -430,6 +430,44 @@ function totalKmAllTime() {
   return sum(allRuns(), "distance");
 }
 
+function monthKey(dateText) {
+  return String(dateText || "").slice(0, 7);
+}
+
+function inCurrentMonth(item) {
+  return monthKey(item.date) === monthKey(todayISO());
+}
+
+function repLogs() {
+  return state.workouts.filter((item) => ["pushups", "pushupTotal", "pullups", "pullupTotal"].some((key) => Number(item[key]) > 0));
+}
+
+function totalReps(items, key) {
+  return items.reduce((total, item) => total + (Number(item[key]) || 0), 0);
+}
+
+function bestReps(key) {
+  return Math.max(0, ...state.workouts.map((item) => Number(item[key]) || 0));
+}
+
+function pushupTotals() {
+  const logs = state.workouts;
+  return {
+    week: totalReps(logs.filter(inCurrentWeek), "pushupTotal"),
+    month: totalReps(logs.filter(inCurrentMonth), "pushupTotal"),
+    allTime: totalReps(logs, "pushupTotal"),
+  };
+}
+
+function pullupTotals() {
+  const logs = state.workouts;
+  return {
+    week: totalReps(logs.filter(inCurrentWeek), "pullupTotal"),
+    month: totalReps(logs.filter(inCurrentMonth), "pullupTotal"),
+    allTime: totalReps(logs, "pullupTotal"),
+  };
+}
+
 function bestPaceRun() {
   const runs = allRuns().filter((run) => Number(run.distance) >= 3 && Number(run.time) > 0);
   if (!runs.length) return null;
@@ -731,6 +769,11 @@ function workoutForm() {
         ${scaleField("Fatigue", "fatigue")}
         ${field("Push-up max", "pushups", "number", "", "reps", "1")}
       </div>
+      <div class="grid-2">
+        ${field("Push-up total", "pushupTotal", "number", "", "total reps", "1")}
+        ${field("Pull-up max", "pullups", "number", "", "reps", "1")}
+      </div>
+      ${field("Pull-up total", "pullupTotal", "number", "", "total reps", "1")}
       <div class="field">
         <label for="notes">Notes</label>
         <textarea id="notes" name="notes" placeholder="Optional — anything worth remembering"></textarea>
@@ -868,7 +911,13 @@ function recentLogs() {
   return `<div class="log-list">${logs
     .map((log) => {
       const title = log.kind === "Workout" ? `${log.category}: ${log.routine}` : `Sleep ${log.sleep || "-"}h, soreness ${log.soreness || "-"}/10`;
-      const subtitle = log.kind === "Workout" && Array.isArray(log.done) && log.done.length ? `${log.date} · ${log.done.length} activities` : log.date;
+      const repParts = [];
+      if (Number(log.pushupTotal)) repParts.push(`${log.pushupTotal} push-ups`);
+      else if (Number(log.pushups)) repParts.push(`${log.pushups} push-up max`);
+      if (Number(log.pullupTotal)) repParts.push(`${log.pullupTotal} pull-ups`);
+      else if (Number(log.pullups)) repParts.push(`${log.pullups} pull-up max`);
+      const completed = log.kind === "Workout" && Array.isArray(log.done) && log.done.length ? `${log.done.length} activities` : "";
+      const subtitle = log.kind === "Workout" ? [log.date, completed, ...repParts].filter(Boolean).join(" · ") : log.date;
       return `<div class="row"><div><strong>${title}</strong><span class="muted">${subtitle}</span></div><span class="status">${log.kind}</span></div>`;
     })
     .join("")}</div>`;
@@ -927,6 +976,10 @@ function renderBody() {
         ${metric("Push-ups", bestPushups() || "-")}
       </div>
       <div class="grid-2" style="margin-top:10px">
+        ${metric("Pull-up max", bestPullups() || "-")}
+        ${metric("Push-ups month", pushupTotals().month || "-", pushupTotals().month ? " reps" : "")}
+      </div>
+      <div class="grid-2" style="margin-top:10px">
         ${metric("Protein target", proteinTarget() || "-", proteinTarget() ? " g/day" : "")}
         ${metric("Nutrition days", `${state.daily.filter(inCurrentWeek).filter((item) => item.nutrition).length}/7`)}
       </div>
@@ -945,7 +998,11 @@ function renderBody() {
 }
 
 function bestPushups() {
-  return Math.max(0, ...state.workouts.map((item) => Number(item.pushups) || 0));
+  return bestReps("pushups");
+}
+
+function bestPullups() {
+  return bestReps("pullups");
 }
 
 function renderProgress() {
@@ -953,6 +1010,8 @@ function renderProgress() {
   const best = bestPaceRun();
   const baseline = Number(state.profile.pushupBaseline) || 0;
   const bestReps = bestPushups();
+  const pushups = pushupTotals();
+  const pullups = pullupTotals();
   screen.innerHTML = `
     <section class="panel panel-pad">
       <h2>Progress trends</h2>
@@ -966,12 +1025,30 @@ function renderProgress() {
       <h2>Personal bests</h2>
       <div class="grid-2">
         ${metric("Push-ups", bestReps > 0 ? bestReps : baseline || "-", baseline && bestReps > baseline ? ` (was ${baseline})` : "")}
-        ${metric("Longest run", longestRun() ? longestRun() : "-", longestRun() ? " km" : "")}
+        ${metric("Pull-ups", bestPullups() || "-")}
       </div>
       <div class="grid-2" style="margin-top:10px">
+        ${metric("Longest run", longestRun() ? longestRun() : "-", longestRun() ? " km" : "")}
         ${metric("Best pace", best ? pace(best) : "-")}
-        ${metric("Total logged", totalKmAllTime() ? totalKmAllTime().toFixed(0) : "-", totalKmAllTime() ? " km" : "")}
       </div>
+    </section>
+    <section class="panel panel-pad">
+      <h2>Rep records</h2>
+      <div class="grid-3">
+        ${metric("Push-ups week", pushups.week || "-", pushups.week ? " reps" : "")}
+        ${metric("Push-ups month", pushups.month || "-", pushups.month ? " reps" : "")}
+        ${metric("Push-ups total", pushups.allTime || "-", pushups.allTime ? " reps" : "")}
+      </div>
+      <div class="grid-3" style="margin-top:10px">
+        ${metric("Pull-ups week", pullups.week || "-", pullups.week ? " reps" : "")}
+        ${metric("Pull-ups month", pullups.month || "-", pullups.month ? " reps" : "")}
+        ${metric("Pull-ups total", pullups.allTime || "-", pullups.allTime ? " reps" : "")}
+      </div>
+    </section>
+    <section class="panel panel-pad">
+      <h2>Push-up record</h2>
+      <div class="chart">${lineChart(weeklyRepSeries("pushupTotal"), "reps")}</div>
+      ${repHistoryHTML()}
     </section>
     <section class="panel panel-pad">
       <h2>Weekly kilometres</h2>
@@ -1079,6 +1156,62 @@ function weeklyDistanceSeries() {
   return [...buckets.entries()].slice(-8).map(([label, value]) => ({ label: label.slice(5), value }));
 }
 
+function weeklyRepSeries(key) {
+  const buckets = new Map();
+  state.workouts.forEach((item) => {
+    const value = Number(item[key]) || 0;
+    if (!value) return;
+    const keyDate = weekStart(item.date);
+    buckets.set(keyDate, (buckets.get(keyDate) || 0) + value);
+  });
+  return [...buckets.entries()].slice(-8).map(([label, value]) => ({ label: label.slice(5), value }));
+}
+
+function monthlyRepSeries(key) {
+  const buckets = new Map();
+  state.workouts.forEach((item) => {
+    const value = Number(item[key]) || 0;
+    if (!value) return;
+    const keyDate = monthKey(item.date);
+    buckets.set(keyDate, (buckets.get(keyDate) || 0) + value);
+  });
+  return [...buckets.entries()].slice(-6).map(([label, value]) => ({ label, value }));
+}
+
+function repHistoryHTML() {
+  const logs = repLogs()
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 8);
+  const monthly = monthlyRepSeries("pushupTotal");
+  const monthlyRows = monthly.length
+    ? `<div class="mini-table">${monthly
+        .map((item) => `<div><span>${item.label}</span><strong>${Math.round(item.value)} reps</strong></div>`)
+        .join("")}</div>`
+    : "";
+
+  if (!logs.length && !monthlyRows) return document.querySelector("#emptyStateTemplate").innerHTML;
+
+  return `
+    ${monthlyRows}
+    ${
+      logs.length
+        ? `<div class="log-list rep-history">${logs
+            .map((log) => {
+              const details = [
+                Number(log.pushupTotal) ? `${log.pushupTotal} push-ups` : "",
+                Number(log.pushups) ? `${log.pushups} push-up max` : "",
+                Number(log.pullupTotal) ? `${log.pullupTotal} pull-ups` : "",
+                Number(log.pullups) ? `${log.pullups} pull-up max` : "",
+              ].filter(Boolean);
+              const total = (Number(log.pushupTotal) || 0) + (Number(log.pullupTotal) || 0);
+              return `<div class="row rep-row"><div><strong>${log.date}</strong><span class="muted">${log.routine || log.category || "Workout"}</span><span class="muted rep-detail">${details.join(" · ")}</span></div><span class="status">${total || "Max"}${total ? " reps" : ""}</span></div>`;
+            })
+            .join("")}</div>`
+        : ""
+    }
+  `;
+}
+
 function lineChart(points, unit) {
   const clean = points.filter((point) => point.value > 0);
   if (!clean.length) return document.querySelector("#emptyStateTemplate").innerHTML;
@@ -1096,9 +1229,17 @@ function lineChart(points, unit) {
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Trend chart in ${unit}">
       <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#dfe5e8" />
       <polyline points="${line}" fill="none" stroke="#24d36b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-      ${coords.map((point) => `<circle cx="${point.x}" cy="${point.y}" r="5" fill="#0f1720" /><text x="${point.x}" y="${height - 6}" text-anchor="middle">${point.label}</text><text x="${point.x}" y="${point.y - 10}" text-anchor="middle">${point.value.toFixed(1)}${unit}</text>`).join("")}
+      ${coords.map((point) => `<circle cx="${point.x}" cy="${point.y}" r="5" fill="#0f1720" /><text x="${point.x}" y="${height - 6}" text-anchor="middle">${point.label}</text><text x="${point.x}" y="${point.y - 10}" text-anchor="middle">${formatChartValue(point.value, unit)}${chartUnitLabel(unit)}</text>`).join("")}
     </svg>
   `;
+}
+
+function formatChartValue(value, unit) {
+  return unit === "reps" ? Math.round(value) : value.toFixed(1);
+}
+
+function chartUnitLabel(unit) {
+  return unit === "reps" ? " reps" : unit;
 }
 
 function render() {

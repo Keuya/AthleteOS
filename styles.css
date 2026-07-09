@@ -288,6 +288,42 @@ h3 {
   color: #a43434;
 }
 
+.rep-history .status {
+  max-width: 92px;
+  white-space: normal;
+  text-align: center;
+}
+
+.rep-detail {
+  display: block;
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+.mini-table {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.mini-table div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.mini-table span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .primary-button,
 .secondary-button,
 .icon-button,
